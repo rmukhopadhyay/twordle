@@ -215,7 +215,10 @@
              gap:18px;padding:32px 24px;text-align:center;width:100%;}
     .rv-target{font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);}
     .rv-target strong{color:var(--text);letter-spacing:.25em;font-weight:700;}
-    .rv-board{display:grid;gap:5px;}
+    /* Review board is a non-interactive recap, so use smaller tiles than the
+       game board — keeps the 6-row case + scoreboard within a phone viewport. */
+    .rv-board{display:grid;gap:5px;--tile:42px;}
+    .rv-board .tile{font-size:1.4rem;}
     .rv-row{display:grid;grid-template-columns:repeat(5,var(--tile));gap:5px;}
     .rv-body h2{font-size:1.4rem;font-weight:700;}
     .rv-body p{color:var(--muted);line-height:1.6;font-size:.9rem;}
