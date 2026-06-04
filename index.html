@@ -176,6 +176,8 @@
     /* Relay-primary handoff: sync chip + demoted nudge */
     .relay-share{display:flex;flex-direction:column;align-items:center;gap:14px;
                  width:100%;}
+    .offline-note{font-size:.78rem;color:var(--muted);line-height:1.5;max-width:300px;
+                  text-align:center;}
     .sync-chip{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
                padding:5px 14px;border-radius:999px;border:1px solid var(--border);
                color:var(--muted);}
@@ -713,17 +715,24 @@
     // Share URL format: <origin><path>#r:<encodedGame>
     // The 'r:' prefix is a marker so other future hashes (deep links, etc.)
     // can coexist. Hash, not query, keeps state client-side (no Pages roundtrip).
+    // Two hash formats:
+    //   #r:<encodedGame> — full state. Used by the first invite and the offline
+    //                      pass (link + QR), so it works with no relay at all.
+    //   #g:<gameId>      — bare game id. The online "nudge": opening it pulls the
+    //                      current state from the relay, so it's never stale and
+    //                      can't time-travel to an old mid-game state.
     const URL_PREFIX = 'r:';
-
-    function parseUrlGame() {
-      const h = location.hash || '';
-      if (!h.startsWith('#' + URL_PREFIX)) return null;
-      return decodeGame(h.slice(1 + URL_PREFIX.length));
-    }
+    const GAME_ID_PREFIX = 'g:';
 
     function buildShareUrl(game) {
       const base = location.origin + location.pathname;
       return base + '#' + URL_PREFIX + encodeGame(game);
+    }
+
+    // The stateless online nudge — just the game id; the relay supplies state.
+    function buildNudgeUrl(game) {
+      const base = location.origin + location.pathname;
+      return base + '#' + GAME_ID_PREFIX + game.id;
     }
 
     function clearUrlHash() {
@@ -1507,14 +1516,38 @@
         if (!authed) return;
         const tryLoad = () => {
           const h = location.hash || '';
-          if (!h.startsWith('#' + URL_PREFIX)) return;
-          const incoming = decodeGame(h.slice(1 + URL_PREFIX.length));
-          if (incoming) {
-            dispatch({ type: 'LOAD_FROM_URL', game: incoming });
-          } else {
-            toast('This link looks broken — ask your friend for a new one.', 3500);
-          }
+          const isState = h.startsWith('#' + URL_PREFIX);       // #r:<encodedGame>
+          const isId    = h.startsWith('#' + GAME_ID_PREFIX);    // #g:<gameId>
+          if (!isState && !isId) return;
+          const payload = isState
+            ? h.slice(1 + URL_PREFIX.length)
+            : h.slice(1 + GAME_ID_PREFIX.length);
           clearUrlHash();
+          const urlGame = isState ? decodeGame(payload) : null;
+          const id = isState ? urlGame?.id : payload;
+          if (isState && !urlGame) {
+            toast('This link looks broken — ask your friend for a new one.', 3500);
+            return;
+          }
+          // Reconcile against the relay: load whichever copy has the newer
+          // turnCounter. This makes a bare #g: link resolve to current state,
+          // and stops a stale #r: link from time-travelling to an old turn when
+          // the relay knows something newer. Best-effort — offline, relayGet
+          // just returns null and we fall back to the URL's own state.
+          (async () => {
+            const relayGame = id ? await relayGet(id) : null;
+            let best = urlGame;
+            if (relayGame && (!best || (relayGame.turnCounter ?? 0) > (best.turnCounter ?? -1))) {
+              best = relayGame;
+            }
+            if (best) {
+              dispatch({ type: 'LOAD_FROM_URL', game: best });
+            } else if (isId) {
+              // Bare link, relay had nothing (offline or expired): open our own
+              // copy if we have it; RESUME_GAME no-ops if we don't.
+              dispatch({ type: 'RESUME_GAME', gameId: id });
+            }
+          })();
         };
         tryLoad();
         const onVisibility = () => { if (!document.hidden) tryLoad(); };
@@ -1955,25 +1988,34 @@
       const me = g.myRole ?? 0;
       const opp = g.players[1 - me] || 'your opponent';
       const [copied, setCopied] = useState(false);
-      const [showLink, setShowLink] = useState(variant === 'invite');
-      const url = useMemo(() => buildShareUrl(g), [g]);
-      const qr = useMemo(() => showLink ? renderQRPath(url) : null, [showLink, url]);
+      const [showOffline, setShowOffline] = useState(variant === 'invite');
+      const stateUrl = useMemo(() => buildShareUrl(g), [g]);   // full state (offline-capable)
+      const qr = useMemo(() => showOffline ? renderQRPath(stateUrl) : null, [showOffline, stateUrl]);
+
+      // The online nudge carries just the game id — the relay supplies state — so
+      // it's never stale and doesn't litter the thread with mid-game links. But
+      // if this turn hasn't synced (offline / relay off), that id link would have
+      // nothing to resolve to, so we send the full-state link instead.
+      const synced = syncStatus?.[g.id] === 'synced';
+      const nudgeUrl = (variant === 'waiting' && synced) ? buildNudgeUrl(g) : stateUrl;
 
       const shareText = g.over ? `The final result from our Twordle match`
         : (g.turnCounter === 1 ? `I'm challenging you to Twordle!` : `Your turn in Twordle`);
       const canWebShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-        && (!navigator.canShare || navigator.canShare({ url, text: shareText }));
+        && (!navigator.canShare || navigator.canShare({ url: nudgeUrl, text: shareText }));
 
-      const copy = async () => {
-        try { await navigator.clipboard.writeText(url); } catch (e) {}
+      const copy = async (txt) => {
+        try { await navigator.clipboard.writeText(txt); } catch (e) {}
         setCopied(true); setTimeout(() => setCopied(false), 1800);
       };
-      const share = async () => {
-        try { await navigator.share({ url, text: shareText, title: 'Twordle' }); } catch (e) {}
+      const share = async (u) => {
+        try { await navigator.share({ url: u, text: shareText, title: 'Twordle' }); } catch (e) {}
       };
 
-      const linkReveal = html`
-        ${showLink && html`
+      // Full-state link + QR (offline pass). Shown by default in 'invite';
+      // tucked behind a toggle in 'waiting'.
+      const offlineReveal = html`
+        ${showOffline && html`
           ${qr && html`
             <div class="qr-box">
               <svg viewBox=${`0 0 ${qr.size} ${qr.size}`} xmlns="http://www.w3.org/2000/svg">
@@ -1982,26 +2024,29 @@
               </svg>
             </div>
           `}
-          <div class="share-url" onClick=${copy}>${url}</div>
+          <div class="share-url" onClick=${() => copy(stateUrl)}>${stateUrl}</div>
         `}
       `;
 
       if (variant === 'invite') {
+        // First contact — always full state so it works even if the recipient
+        // or the relay is offline.
         return html`
           <div class="relay-share">
-            ${linkReveal}
-            ${canWebShare && html`<button class="btn btn-g" onClick=${share}>Share →</button>`}
-            <button class=${`btn ${canWebShare ? 'btn-o' : 'btn-g'}`} onClick=${copy}>
+            ${offlineReveal}
+            ${canWebShare && html`<button class="btn btn-g" onClick=${() => share(stateUrl)}>Share →</button>`}
+            <button class=${`btn ${canWebShare ? 'btn-o' : 'btn-g'}`} onClick=${() => copy(stateUrl)}>
               ${copied ? 'Copied! ✓' : 'Copy Link'}
             </button>
-            <button class="qr-toggle" onClick=${() => setShowLink(s => !s)}>
-              ${showLink ? 'Hide QR Code' : 'Show QR Code'}
+            <button class="qr-toggle" onClick=${() => setShowOffline(s => !s)}>
+              ${showOffline ? 'Hide QR Code' : 'Show QR Code'}
             </button>
           </div>
         `;
       }
 
-      // variant === 'waiting'
+      // variant === 'waiting' — relay-primary. Nudge = stateless id link; the
+      // offline pass (full state + QR) sits behind a toggle.
       const status = syncStatus?.[g.id] || 'syncing';
       const failed = status === 'failed';
       const chip = failed
@@ -2012,13 +2057,25 @@
       return html`
         <div class="relay-share">
           ${chip}
-          <button class=${`btn ${failed ? 'btn-g' : 'btn-o'}`} onClick=${canWebShare ? share : copy}>
+          <button class=${`btn ${failed ? 'btn-g' : 'btn-o'}`}
+                  onClick=${canWebShare ? () => share(nudgeUrl) : () => copy(nudgeUrl)}>
             ${copied ? 'Copied! ✓' : `${failed ? 'Send' : 'Nudge'} ${opp} a link`}
           </button>
-          <button class="qr-toggle" onClick=${() => setShowLink(s => !s)}>
-            ${showLink ? 'Hide link & QR' : 'Show link & QR'}
+          <button class="qr-toggle" onClick=${() => setShowOffline(s => !s)}>
+            ${showOffline ? 'Hide offline options' : 'No internet? Pass it manually'}
           </button>
-          ${linkReveal}
+          ${showOffline && html`
+            <div class="offline-note">
+              This link & QR carry the whole game, so they work with no connection —
+              for SMS-only, or scanning in person.
+            </div>
+          `}
+          ${offlineReveal}
+          ${showOffline && html`
+            <button class="btn btn-o" onClick=${() => copy(stateUrl)}>
+              ${copied ? 'Copied! ✓' : 'Copy offline link'}
+            </button>
+          `}
         </div>
       `;
     }
