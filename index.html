@@ -1422,30 +1422,38 @@
 
     // ── Components ───────────────────────────────────────────────────────
 
-    // True iff a 2-player match is mid-flight (past setup, before game-over).
-    // Used to decide whether the menu button should confirm before going home.
-    function isInProgressMatch(state) {
+    // What the TopBar's left button should do on the current screen:
+    //   'cancel-confirm' — initiator's word-entry: leaving discards the words
+    //                      they're typing → confirm first.
+    //   'cancel'         — initiator's name / mode setup: leaving drops a
+    //                      not-yet-saved placeholder, but nothing meaningful is
+    //                      entered yet → cancel instantly, no confirm.
+    //   'home'           — everywhere else. Any real match is preserved in the
+    //                      Active games list and fully resumable, so going home
+    //                      is non-destructive: just navigate, no confirm. (This
+    //                      is the case for nearly every screen.)
+    function topbarLeftAction(state) {
+      if (state.screen === 'setup' || state.screen === 'mode-chooser') return 'cancel';
       const g = getCurrentGame(state);
-      return !!g
-        && (g.mode === 'l' || g.mode === 'r')
-        && g.players[0] !== ''
-        && state.screen !== 'game-over';
+      if (state.screen === 'word-entry' && g && g.wordEntryPhase === 0) return 'cancel-confirm';
+      return 'home';
     }
 
     // Unified top bar used on every screen except login & home.
-    //  - left: Menu (⌂); confirms if a 2P match is in progress
+    //  - left: "⌂ Home" (just navigates — the match is preserved & resumable),
+    //          except during initiator setup where it's "✕ Cancel"
     //  - center: title + optional badge (chip) or meta (plain text)
     //  - right: optional action node (e.g. New Game button on solo game)
     function TopBar({ state, dispatch, title = 'Twordle', badge, meta, right }) {
-      const onMenu = () => {
-        if (isInProgressMatch(state)) {
-          if (!confirm('End the current 2-player match and return to the menu?')) return;
-        }
+      const leftAction = topbarLeftAction(state);
+      const onLeft = () => {
+        if (leftAction === 'cancel-confirm' && !confirm('Discard this challenge setup?')) return;
         dispatch({ type: 'GO_HOME' });
       };
+      const leftLabel = leftAction === 'home' ? '⌂ Home' : '✕ Cancel';
       return html`
         <div class="topbar">
-          <button class="tb-menu" onClick=${onMenu}>⌂ Menu</button>
+          <button class="tb-menu" onClick=${onLeft}>${leftLabel}</button>
           <div class="tb-center">
             <h1>${title}</h1>
             ${badge ? html`<div class="badge">${badge}</div>` : null}

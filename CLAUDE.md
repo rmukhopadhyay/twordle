@@ -287,15 +287,21 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `RoundSummary` | `round-summary` | Scoreboard. Local-2P → handoff; remote-receiver → next round. Remote-sender: relay on → waiting (`RelayShareBlock`); relay off → "Send to X for Round N" button |
 | `GameOver` | `game-over` | Stump / guess-total / tie outcome + final scoreboard. **Remote sender** (turnFor !== myRole): relay on → "result on its way" + waiting affordance; relay off → prominent embedded share |
 | `Scoreboard` | (shared) | Used by RoundSummary and GameOver |
-| `TopBar` | (shared) | Unified header on every screen except `login` & `home`. Owns the menu/home button. |
+| `TopBar` | (shared) | Unified header on every screen except `login` & `home`. Owns the left **Home/Cancel** button (`topbarLeftAction`). |
 | `ActiveGames` | (shared, on Home) | List of in-progress games sorted by most recent activity; tap to resume, × to dismiss |
 | `Disclaimer` | (shared, on Login + Home) | Small attribution + IP-respect notice ("Inspired by Wordle® by The New York Times Company...") |
 
-### TopBar and the menu confirmation rule
+### TopBar and the left button (Home / Cancel)
 
-`TopBar` props: `state`, `dispatch`, optional `title`, `badge` (chip), `meta` (plain text under title), `right` (action node, e.g. solo's New Game). It renders a `⌂ Menu` button on the left that always goes home — but confirms first if a 2-player match is in progress.
+`TopBar` props: `state`, `dispatch`, optional `title`, `badge` (chip), `meta` (plain text under title), `right` (action node, e.g. solo's New Game). Its left button just **navigates home** — labeled **"⌂ Home"**, with **no confirm** — because going home is non-destructive: any real match is preserved in the Active games list and fully resumable.
 
-"In progress" = `isInProgressMatch(state)`: `getCurrentGame(state)` exists, its `mode` is `'l'` or `'r'`, `players[0]` is set, and `screen !== 'game-over'`. That covers mode-chooser, word-entry, accept-challenge, handoff, share, game (2P), round-summary, and review — every screen where bailing out would discard a live match. The Setup screen (before SETUP_DONE) has no current game yet, so it skips the confirm. Game-over and solo-summary skip because the match (or solo round) is already done.
+The exception is the **initiator's setup flow**, where leaving discards a not-yet-saved challenge. There the button becomes **"✕ Cancel"**. The behavior is classified by `topbarLeftAction(state)`:
+
+- `'cancel'` — `setup` (names) and `mode-chooser`: cancel instantly (nothing meaningful is entered yet; the placeholder game drops as a blank setup).
+- `'cancel-confirm'` — `word-entry` with `wordEntryPhase === 0` (initiator typing their 3 words): confirms **"Discard this challenge setup?"** first.
+- `'home'` — everywhere else, including the **opponent's** first setup (`accept-challenge`, local `word-entry` phase 1): the received challenge / live match is saved and resumable, so it just goes home.
+
+**Why this replaced the old rule:** the previous "⌂ Menu" button confirmed *"End the current 2-player match and return to the menu?"* on nearly every 2P screen (gated by an old `isInProgressMatch` check). That was misleading — going home doesn't end the match, it parks it in Active games — and it made the button feel broken (tapping it "did nothing" when users reflexively cancelled the confirm). Home is now non-destructive by default; the only real discard is the initiator's pre-lock setup, which is the one place that confirms.
 
 ---
 
@@ -360,6 +366,7 @@ These came up during iterative play-testing and informed the current state of th
 - **Solo summary copy was reverted** from a "warmup" theme to the original `Genius!`/`A hole-in-one. Legendary.` etc. The CTA below ("Ready for a real challenge? ⚔ 2 Player") is kept.
 - **The disclaimer** (Wordle® attribution + fair-use notice) was a deliberate add — keep it on `Login` and `Home`.
 - **Relay-primary UX, link demoted to a "nudge."** Remote handoffs now show a waiting screen with a sync chip; the share link is reframed as a notification poke (since there's no push) + offline fallback, not the primary transport. The one exception is the mandatory first invite. All of it degrades to the old share-forward UI when `RELAY_URL` is empty. See "Relay-primary UX" above.
+- **TopBar left button is "⌂ Home" (no confirm), "✕ Cancel" only in initiator setup.** The old "⌂ Menu" confirmed "End the current 2-player match?" on nearly every 2P screen — misleading (home parks the match in Active games, doesn't end it) and it felt broken. Home is now non-destructive by default; only the initiator's pre-lock setup discards anything, and only `word-entry` confirms. See "TopBar and the left button" above.
 
 ---
 
