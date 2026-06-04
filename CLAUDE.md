@@ -286,7 +286,7 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `SoloSummary` | `solo-summary` | Result + word + Play Again / Change Mode + 2-Player CTA |
 | `RoundSummary` | `round-summary` | Scoreboard. Local-2P → handoff; remote-receiver → next round. Remote-sender: relay on → waiting (`RelayShareBlock`); relay off → "Send to X for Round N" button |
 | `GameOver` | `game-over` | Stump / guess-total / tie outcome + final scoreboard. **Remote sender** (turnFor !== myRole): relay on → "result on its way" + waiting affordance; relay off → prominent embedded share |
-| `Scoreboard` | (shared) | Used by RoundSummary and GameOver |
+| `Scoreboard` | (shared) | Used by RoundSummary and GameOver. A stumped cell shows the **target word** (gold, from `challengeFor[pi][r]`) instead of a bare ✗; solved cells show the guess count |
 | `TopBar` | (shared) | Unified header on every screen except `login` & `home`. Owns the left **Home/Cancel** button (`topbarLeftAction`). |
 | `ActiveGames` | (shared, on Home) | List of in-progress games sorted by most recent activity; tap to resume, × to dismiss |
 | `Disclaimer` | (shared, on Login + Home) | Small attribution + IP-respect notice ("Inspired by Wordle® by The New York Times Company...") |
@@ -366,6 +366,7 @@ These came up during iterative play-testing and informed the current state of th
 - **Solo summary copy was reverted** from a "warmup" theme to the original `Genius!`/`A hole-in-one. Legendary.` etc. The CTA below ("Ready for a real challenge? ⚔ 2 Player") is kept.
 - **The disclaimer** (Wordle® attribution + fair-use notice) was a deliberate add — keep it on `Login` and `Home`.
 - **Relay-primary UX, link demoted to a "nudge."** Remote handoffs now show a waiting screen with a sync chip; the share link is reframed as a notification poke (since there's no push) + offline fallback, not the primary transport. The one exception is the mandatory first invite. All of it degrades to the old share-forward UI when `RELAY_URL` is empty. See "Relay-primary UX" above.
+- **Stumped players now see the answer persistently, not just a 3.5s toast.** A stumped guesser's word is surfaced on every screen they can land on: a `#stump-overlay` banner on the board (local players, who linger via `pendingContinue`), a `.stump-reveal` banner on the remote waiting screen (read from the `reviewBoard` snapshot's `tg`), and the word in the `Scoreboard` stumped cell (round-summary + game-over). The ephemeral loss toast stays as immediate feedback. Remote flow is unchanged — turns still auto-deliver; the answer just appears wherever the stumped player ends up. (The answer is always recoverable as `game.target` / `challengeFor[pi][r]` — no state changes were needed.)
 - **TopBar left button is "⌂ Home" (no confirm), "✕ Cancel" only in initiator setup.** The old "⌂ Menu" confirmed "End the current 2-player match?" on nearly every 2P screen — misleading (home parks the match in Active games, doesn't end it) and it felt broken. Home is now non-destructive by default; only the initiator's pre-lock setup discards anything, and only `word-entry` confirms. See "TopBar and the left button" above.
 
 ---

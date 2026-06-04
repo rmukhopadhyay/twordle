@@ -223,6 +223,12 @@
     #game-main{flex:1;display:flex;flex-direction:column;align-items:center;
                justify-content:center;gap:28px;padding:20px 0 10px;position:relative;}
     #cont-overlay{position:absolute;bottom:68px;left:50%;transform:translateX(-50%);z-index:10;}
+    #stump-overlay{position:absolute;bottom:128px;left:50%;transform:translateX(-50%);z-index:10;
+                   background:#1a1a1b;border:1px solid var(--border);border-radius:8px;
+                   padding:9px 16px;font-size:.85rem;color:var(--muted);white-space:nowrap;
+                   box-shadow:0 4px 16px rgba(0,0,0,.5);}
+    #stump-overlay strong{color:#d4a017;letter-spacing:.18em;font-weight:700;
+                          text-transform:uppercase;margin-left:3px;}
 
     /* tiles */
     #board{display:grid;grid-template-rows:repeat(6,var(--tile));grid-template-columns:repeat(5,var(--tile));gap:5px;}
@@ -270,6 +276,13 @@
     .sb-cell.ok {color:var(--correct);}
     .sb-cell.no {color:var(--muted);}
     .sb-cell.na {color:#3a3a3c;}
+    .sb-cell.word{color:#d4a017;font-size:.6rem;font-weight:700;letter-spacing:.02em;
+                  text-transform:uppercase;align-self:center;}
+    .stump-reveal{background:#1a1a1b;border:1px solid var(--border);border-radius:8px;
+                  padding:10px 16px;font-size:.9rem;color:var(--muted);max-width:340px;
+                  line-height:1.5;text-align:center;}
+    .stump-reveal strong{color:#d4a017;letter-spacing:.15em;font-weight:700;
+                         text-transform:uppercase;}
     .totals-row{display:flex;justify-content:center;gap:32px;font-size:.8rem;color:var(--muted);}
     .tot-item strong{color:var(--text);}
     .rs-verdict{font-size:.9rem;color:var(--muted);}
@@ -2023,6 +2036,13 @@
       const firstInvite = (g.challengeFor[0]?.length ?? 0) === 0;
       const variant = (firstInvite || !relayOn) ? 'invite' : 'waiting';
 
+      // If I just got stumped on the turn I'm handing off, reveal my answer here
+      // (the ephemeral board toast is long gone by the time I look back). The
+      // reviewBoard snapshot of my just-played turn carries my target word.
+      const rb = g.reviewBoard;
+      const justStumped = !!rb && (rb.gs?.length ?? 0) >= ROWS
+        && rb.sc?.length && !rb.sc[rb.sc.length - 1].every(s => s === 'correct');
+
       let icon, heading, sub;
       if (variant === 'invite') {
         icon = '📨';
@@ -2043,6 +2063,9 @@
             <div class="ho-icon">${icon}</div>
             <h2>${heading}</h2>
             <p dangerouslySetInnerHTML=${{ __html: sub }}></p>
+            ${justStumped && html`
+              <div class="stump-reveal">You were stumped — the word was <strong>${rb.tg}</strong></div>
+            `}
             <${RelayShareBlock} game=${g} syncStatus=${syncStatus} variant=${variant} />
             <button class="btn btn-o" onClick=${() => dispatch({ type: 'GO_HOME' })}>
               ${variant === 'waiting' ? 'Back to games' : 'Done'}
@@ -2373,6 +2396,9 @@
                 </div>
               `)}
             </div>
+            ${over && !game.won && (mode === 'l' || mode === 'r') && html`
+              <div id="stump-overlay">The word was <strong>${target}</strong></div>
+            `}
             ${showContinueBtn && html`
               <div id="cont-overlay">
                 <button class="btn btn-g" onClick=${() => dispatch({ type: 'CONTINUE_FROM_TURN' })}>
@@ -2416,7 +2442,7 @@
       `;
     }
 
-    function Scoreboard({ players, results, roundsPlayed }) {
+    function Scoreboard({ players, results, roundsPlayed, challengeFor }) {
       return html`
         <div class="scoreboard">
           <div class="sb-head">
@@ -2430,7 +2456,11 @@
                 const res = r < roundsPlayed ? results[r][pi] : null;
                 if (!res) return html`<span class="sb-cell na" key=${r}>—</span>`;
                 if (res.solved) return html`<span class="sb-cell ok" key=${r}>${res.guesses}</span>`;
-                return html`<span class="sb-cell no" key=${r}>✗</span>`;
+                // Stumped: reveal the word that beat them (instead of a bare ✗).
+                const word = challengeFor?.[pi]?.[r];
+                return word
+                  ? html`<span class="sb-cell word" key=${r}>${word}</span>`
+                  : html`<span class="sb-cell no" key=${r}>✗</span>`;
               })}
             </div>
           `)}
@@ -2536,7 +2566,7 @@
           <${TopBar} state=${state} dispatch=${dispatch} badge=${`After Round ${completedRoundIdx + 1}`} />
           <div class="rs-body">
             <div class="rs-label">Scoreboard</div>
-            <${Scoreboard} players=${tp.players} results=${tp.results} roundsPlayed=${completedRoundIdx + 1} />
+            <${Scoreboard} players=${tp.players} results=${tp.results} roundsPlayed=${completedRoundIdx + 1} challengeFor=${g.challengeFor} />
             <div class="totals-row">
               <span class="tot-item">${tp.players[0]}: <strong>${t0}</strong> guess${t0 !== 1 ? 'es' : ''}</span>
               <span class="tot-item">${tp.players[1]}: <strong>${t1}</strong> guess${t1 !== 1 ? 'es' : ''}</span>
@@ -2589,7 +2619,7 @@
             <h2 dangerouslySetInnerHTML=${{ __html: headlineHtml }}></h2>
             <p class="go-sub" dangerouslySetInnerHTML=${{ __html: subHtml }}></p>
             <div class="go-detail">
-              <${Scoreboard} players=${tp.players} results=${tp.results} roundsPlayed=${roundsPlayed} />
+              <${Scoreboard} players=${tp.players} results=${tp.results} roundsPlayed=${roundsPlayed} challengeFor=${g.challengeFor} />
             </div>
             ${isRemoteSender && html`
               <div class="go-share">
