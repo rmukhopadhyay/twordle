@@ -169,7 +169,7 @@ When `REVEAL_DONE` produces `over: true` in remote mode, the **sender** goes to 
 
 ### Review screen
 
-After the sender finishes a round turn and shares the URL, the recipient lands on a `ReviewBoard` component first — it shows the sender's actual guesses and tile colors against the receiver's secret word, plus "Bob solved it in 3!" / "Bob was stumped." and a Continue button. Tapping Continue dispatches `REVIEW_DONE`, which clears `reviewBoard` and routes to whatever would have applied otherwise (`game`, `round-summary`, or `game-over`). The snapshot lives in the encoded URL as a compact `rb` field (player index, round, guesses, single-char score codes, target). The sender never sees `'review'` — `REVEAL_DONE` explicitly sets their screen to share/round-summary/game-over; `RESUME_GAME` only routes to review when `turnFor === myRole`.
+After the sender finishes a round turn and shares the URL, the recipient lands on a `ReviewBoard` component first — it shows the sender's actual guesses and tile colors against the receiver's secret word, plus "Bob solved it in 3!" / "Bob was stumped.", **a "Score so far" `Scoreboard`** (running standings through the round the opponent just played, so the player can calibrate risk before their turn), and a Continue button. Tapping Continue dispatches `REVIEW_DONE`, which clears `reviewBoard` and routes to whatever would have applied otherwise (`game`, `round-summary`, or `game-over`). The snapshot lives in the encoded URL as a compact `rb` field (player index, round, guesses, single-char score codes, target). The sender never sees `'review'` — `REVEAL_DONE` explicitly sets their screen to share/round-summary/game-over; `RESUME_GAME` only routes to review when `turnFor === myRole`.
 
 ### Open work / known gaps (deferred)
 
@@ -284,7 +284,7 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `Handoff` | `handoff` | Reads `state.handoff.next` and dispatches it on click (pass-and-play only) |
 | `ShareScreen` | `share` | Two variants via `RelayShareBlock`: **invite** (first contact / relay off — prominent Share/Copy/QR) vs **waiting** (relay on — sync chip + demoted nudge). Detector: first invite ⟺ `challengeFor[0].length === 0`. Replaces `Handoff` for remote mode |
 | `RelayShareBlock` | (shared) | The share/sync affordance. `variant='invite'` = prominent **full-state** link/QR (first contact); `variant='waiting'` = sync chip + a **Nudge** button that sends the stateless `#g:` id link (or full state if unsynced), with the **offline pass** (full-state link + QR) behind a "No internet? Pass it manually" toggle. Used by ShareScreen, RoundSummary (sender), GameOver (sender) |
-| `ReviewBoard` | `review` | Opponent's just-played board snapshot for the receiver; Continue → REVIEW_DONE |
+| `ReviewBoard` | `review` | Opponent's just-played board snapshot for the receiver + a "Score so far" `Scoreboard` (running standings); Continue → REVIEW_DONE |
 | `Game` | `game` | Board + keyboard. Owns reveal animation timing, dispatches `REVEAL_DONE` |
 | `SoloSummary` | `solo-summary` | Result + word + Play Again / Change Mode + 2-Player CTA |
 | `RoundSummary` | `round-summary` | Scoreboard. Local-2P → handoff; remote-receiver → next round. Remote-sender: relay on → waiting (`RelayShareBlock`); relay off → "Send to X for Round N" button |

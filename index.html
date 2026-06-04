@@ -2562,6 +2562,9 @@
                 ? `Took them ${guessCount} ${tries} to crack the word.`
                 : `They used all 6 guesses without getting it.`}
             </p>
+            <div class="rs-label">Score so far</div>
+            <${Scoreboard} players=${g.players} results=${g.results}
+                           roundsPlayed=${rb.r + 1} challengeFor=${g.challengeFor} />
             <button class="btn btn-g" onClick=${() => dispatch({ type: 'REVIEW_DONE' })}>
               Continue →
             </button>
