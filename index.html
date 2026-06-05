@@ -479,6 +479,91 @@
     //
     // mode: 's' solo · 'l' local 2-player · 'r' remote (Phase 2+)
     // The shape is the same across modes; unused slices stay at defaults.
+    //
+    // ── Data shapes (JSDoc typedefs) ──
+    // Documentation contracts for the core domain objects. These give editor
+    // hover-docs; they do NOT enforce types (this is an inline <script>, so no
+    // build/type-check step runs over it — see CLAUDE.md "Recent decisions").
+
+    /**
+     * @typedef {'s'|'l'|'r'} GameMode  Solo · Local 2-player · Remote.
+     * @typedef {'absent'|'present'|'correct'} TileState  Per-tile score code.
+     */
+
+    /**
+     * One player's outcome for one round.
+     * @typedef {Object} RoundResult
+     * @property {boolean} solved   Did they crack the word?
+     * @property {number}  guesses  Guesses used (6 if stumped, for the tiebreaker).
+     */
+
+    /**
+     * The sender's just-played board, attached so the receiver can review it
+     * before their turn. Lives on `game.reviewBoard`; cleared on `REVIEW_DONE`.
+     * @typedef {Object} ReviewSnapshot
+     * @property {0|1}           p   Which player played it.
+     * @property {number}        r   Round index.
+     * @property {string[]}      gs  Their guesses.
+     * @property {TileState[][]} sc  Per-guess tile scores.
+     * @property {string}        tg  The target word they were guessing.
+     */
+
+    /**
+     * Per-game domain state — the thing `encodeGame` serializes into a URL hash
+     * and into the on-disk games dict. UI/transient state lives on {@link AppState},
+     * not here, so it never leaks into share links or saves.
+     * @typedef {Object} Game
+     * @property {string}   id              6-char base32 id (see `randomGameId`).
+     * @property {GameMode} mode
+     * @property {[string, string]} players          [p1, p2] names.
+     * @property {[string[], string[]]} challengeFor  Target words, `[guesserIdx][roundIdx]`.
+     * @property {(RoundResult|null)[][]} results     `[roundIdx][playerIdx]`; null until played.
+     * @property {number}   round           Current round index.
+     * @property {0|1}      turn            Whose turn within the round.
+     * @property {0|1}      wordEntryPhase  0 = initiator sets words, 1 = opponent.
+     * @property {string}   target          Word the active player is guessing.
+     * @property {string[]} guesses         Submitted guesses this turn.
+     * @property {TileState[][]} scores     Per-guess tile scores this turn.
+     * @property {string}   current         In-progress (unsubmitted) guess.
+     * @property {boolean}  over
+     * @property {boolean}  won
+     * @property {0|1}      [turnFor]       Remote only: which player the URL/state targets.
+     * @property {number}   [turnCounter]   Remote only: monotonic per-game counter.
+     * @property {ReviewSnapshot} [reviewBoard]
+     * @property {0|1}      [myRole]        Per-device perspective; in the disk wrapper, NOT encoded.
+     * @property {number}   [_lastUpdate]   Transient sort key for the active-games list.
+     */
+
+    /**
+     * Transient pass-and-play handoff-screen config. Data, not a function, so the
+     * reducer state stays JSON-serializable; `next` is dispatched on tap.
+     * @typedef {Object} Handoff
+     * @property {string} badge
+     * @property {string} icon
+     * @property {string} title
+     * @property {string} desc
+     * @property {string} btnText
+     * @property {{type: string}} next  Action object to dispatch (e.g. `{type:'START_TURN',round,player}`).
+     */
+
+    /**
+     * The reducer's root state: a pointer (`currentGameId`) into a `games` dict,
+     * plus transient UI that is never persisted or encoded.
+     * @typedef {Object} AppState
+     * @property {string}  screen
+     * @property {?string} currentGameId
+     * @property {Object<string, Game>} games
+     * @property {?Handoff} handoff
+     * @property {boolean} pendingContinue
+     * @property {boolean} revealing
+     * @property {{errorTick: number, errorMsg: string}} ui
+     */
+
+    /**
+     * Per-game outgoing-sync status. Lives in `App` useState (outside the reducer —
+     * never persisted/encoded); drives the sync chip / nudge affordance.
+     * @typedef {Object<string, 'syncing'|'synced'|'failed'>} SyncStatus
+     */
 
     const GAME_VERSION = 1;
 
@@ -493,6 +578,7 @@
       return out;
     }
 
+    /** @param {Partial<Game>} [overrides] @returns {Game} */
     const emptyGame = (overrides = {}) => ({
       id: '',
       mode: 's',
@@ -533,6 +619,7 @@
     // Where should a freshly-loaded URL game land the receiver?
     // We assume the receiver IS the next player (turnFor) — Phase 2 punts on
     // divergence detection (older-link / wrong-recipient handling).
+    /** @param {Game} g @returns {string} the screen name to land on */
     function screenForReceivedGame(g) {
       if (!g) return 'home';
       // Review-the-opponent's-board takes precedence: when the URL carries a
@@ -552,6 +639,7 @@
     // True iff a remote game is paused at "round just completed, eval = continue,
     // not yet advanced to the next round." Both turn-results are recorded for
     // the current round but the round hasn't been advanced.
+    /** @param {Game} g @returns {boolean} */
     function isRemoteAtRoundSummary(g) {
       if (g.mode !== 'r' || g.over) return false;
       if (g.round >= TOTAL_ROUNDS - 1) return false;  // last round → game-over, not round-summary
@@ -559,6 +647,7 @@
       return !!(r && r[0] && r[1]);
     }
 
+    /** @param {AppState} state @returns {?Game} */
     function getCurrentGame(state) {
       return state.currentGameId ? state.games[state.currentGameId] : null;
     }
@@ -567,6 +656,11 @@
     // Stamps _lastUpdate so the active-games list can sort by recency. The
     // underscore-prefixed field is in-memory only — encodeGame doesn't pick
     // it up (it builds `packed` from a fixed allow-list of keys).
+    /**
+     * @param {AppState} state
+     * @param {Partial<Game> | ((g: Game) => Game)} update
+     * @returns {AppState}
+     */
     function withCurrentGame(state, update) {
       const id = state.currentGameId;
       if (!id) return state;
@@ -589,6 +683,11 @@
     // and re-share. With the relay on and the result synced (`delivered`), there's
     // nothing left to do, so the sender's finished game is dropped too. Finished
     // remote receivers are always dropped — they've already seen the result.
+    /**
+     * @param {AppState} state
+     * @param {{delivered?: boolean}} [opts]  `delivered` = the relay synced a finished remote result.
+     * @returns {Object<string, Game>} the (possibly pruned) games dict
+     */
     function dropLeavingCurrent(state, { delivered = false } = {}) {
       const games = { ...state.games };
       const cur = getCurrentGame(state);
@@ -616,6 +715,7 @@
     // Compact JSON with short keys + single-char score codes, then run
     // through LZ-string compressToEncodedURIComponent — the output is both
     // compressed AND URL-component-safe (no further base64 step needed).
+    /** @param {Game} g @returns {string} LZ-string compressed, URL-component-safe */
     function encodeGame(g) {
       const packed = {
         v: GAME_VERSION,
@@ -642,6 +742,7 @@
       return LZString.compressToEncodedURIComponent(JSON.stringify(packed));
     }
 
+    /** @param {string} str @returns {?Game} null if malformed or a wrong `v` version */
     function decodeGame(str) {
       const tryParse = (text) => {
         if (!text) return null;
@@ -729,6 +830,7 @@
     // ours: 200 = stored, 409 = the relay already held this tc or newer (their
     // device has it / has moved past it). Both count as "delivered" for the
     // sync indicator. Any error / disabled relay → false (the UI then nudges).
+    /** @param {Game} game @returns {Promise<boolean>} delivered? */
     async function relayPut(game) {
       if (!RELAY_URL || !game || game.mode !== 'r' || game.turnCounter === undefined) return false;
       try {
@@ -742,6 +844,7 @@
       } catch (e) { return false; }  // best-effort — the share link is the fallback
     }
 
+    /** @param {string} id @returns {Promise<?Game>} the relay's current state, or null */
     async function relayGet(id) {
       if (!RELAY_URL || !id) return null;
       try {
@@ -754,6 +857,7 @@
     }
 
     // "I'm waiting on the opponent for this match" — the games we should poll.
+    /** @param {Game} g @returns {boolean} */
     function isWaitingRemote(g) {
       return g && g.mode === 'r' && !g.over
         && g.myRole !== undefined && g.turnFor !== undefined
@@ -773,6 +877,13 @@
       ui: { errorTick: 0, errorMsg: '' },
     };
 
+    /**
+     * Single source of truth for every screen transition. Each `action.type` is
+     * a named transition; components are pure functions of `(state, dispatch)`.
+     * @param {AppState} state
+     * @param {{type: string}} action  Action object; extra fields per type.
+     * @returns {AppState}
+     */
     function reducer(state, action) {
       switch (action.type) {
         case 'RESET':
@@ -1204,6 +1315,12 @@
     //     scoreboard. The receiver advances to the next round on tap.
     //   - If P2 just played and game should end (asymmetric stump OR last
     //     round) → mark over and record the winning side
+    /**
+     * @param {Game} g  The game as it was when the just-finished turn started.
+     * @param {(RoundResult|null)[][]} results  Results incl. the turn just played.
+     * @param {boolean} justWon  Did the player who just played win this turn?
+     * @returns {Partial<Game>} state updates positioning the URL recipient at their next step.
+     */
     function advanceRemoteAfterTurn(g, results, justWon) {
       const counter = (g.turnCounter || 0) + 1;
       // Snapshot the just-played board so the receiver can review it before
@@ -1373,6 +1490,25 @@
     }
 
     // ── Components ───────────────────────────────────────────────────────
+    // Each is a pure function of (state, dispatch) (+ a few extra props).
+    // Definitions are interleaved (not grouped) — this index maps them by role;
+    // search the name to jump:
+    //
+    //   Root / shared:
+    //     App             — root: auth gate, persistence, URL + relay effects
+    //     TopBar          — header on every screen except login & home
+    //     Scoreboard      — round/total grid (RoundSummary, GameOver, ReviewBoard)
+    //     RelayShareBlock — share/sync affordance (invite vs waiting variants)
+    //     ActiveGames     — resumeable-games list on Home
+    //     Disclaimer      — attribution notice (Login, Home)
+    //
+    //   One per screen (state.screen → component):
+    //     home → Home              setup → Setup          mode-chooser → ModeChooser
+    //     accept-challenge → AcceptChallenge              word-entry → WordEntry
+    //     handoff → Handoff        share → ShareScreen     review → ReviewBoard
+    //     game → Game              solo-summary → SoloSummary
+    //     round-summary → RoundSummary                    game-over → GameOver
+    //     (login → Login, rendered by App's auth gate)
 
     // What the TopBar's left button should do on the current screen:
     //   'cancel-confirm' — initiator's word-entry: leaving discards the words
@@ -1384,6 +1520,7 @@
     //                      Active games list and fully resumable, so going home
     //                      is non-destructive: just navigate, no confirm. (This
     //                      is the case for nearly every screen.)
+    /** @param {AppState} state @returns {'home'|'cancel'|'cancel-confirm'} */
     function topbarLeftAction(state) {
       if (state.screen === 'setup' || state.screen === 'mode-chooser') return 'cancel';
       const g = getCurrentGame(state);
@@ -1707,6 +1844,7 @@
 
     // Resumeable-game descriptors. A game shows up here if there's some
     // meaningful next-step the user can take with it.
+    /** @param {Game} g @returns {?{icon: string, title: string, status: string, mine: boolean}} active-games row, or null to hide */
     function describeGame(g) {
       const opp = g.mode === 'r' && g.players ? g.players[1 - (g.myRole ?? 0)] : null;
       if (g.mode === 's') {
