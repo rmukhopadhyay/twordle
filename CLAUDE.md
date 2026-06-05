@@ -53,7 +53,7 @@ Client-side password gate using the Web Crypto API. No server involved.
 - **Storage**: `localStorage` key `_wpa` — shared across all tabs/windows of the same origin
 - **TTL**: 365 days, slid forward on each App mount via `writeAuth()`. An active user effectively never expires; an inactive user is kicked to login after a year.
 - **Auth state** lives outside the reducer (separate `useState` in `App`) so it isn't part of the saved game state
-- **Logout**: `clearAuth()` + `clearSaves()` removes `_wpa`, `_tw_games_v1`, `_tw_meta_v1`, and the legacy `_tw_save_v2` if it's still around. Then dispatches `RESET`.
+- **Logout**: `clearAuth()` + `clearSaves()` removes `_wpa`, `_tw_games_v1`, and `_tw_meta_v1`. Then dispatches `RESET`.
 
 To change the password, generate a new hash:
 ```python
@@ -144,7 +144,7 @@ Components read the active game via `getCurrentGame(state)`; reducer actions mut
 
 `encodeGame(game) → LZ-string compressed JSON` is the **shared serialization** used for the URL hash (remote shares), each entry in the on-disk games dict, **and the web-relay payload** — all three carry the identical blob. Short keys, single-char score codes (`'a'`/`'p'`/`'c'`). Versioned via `v: 1`. The output of `LZString.compressToEncodedURIComponent` is already URL-component-safe — no separate base64 step needed.
 
-`decodeGame` dual-decodes: tries the current LZ-string format first, falls back to the legacy plain `base64url(JSON)` format used in earlier versions so URLs and saves from before this commit still work. Typical URL payload sizes: ~217 chars (LZ) vs ~290 chars (legacy base64url) on a fresh challenge — about 25% smaller, with bigger savings on filled-out mid-game states. Real practical win is denser → sparser QR codes that scan better in poor lighting.
+`decodeGame` reverses it: `decompressFromEncodedURIComponent` → `JSON.parse` → reject anything whose `v !== GAME_VERSION`, else `materialize` back into a full game. (An earlier plain `base64url(JSON)` format and its decode fallback were removed once all testers had migrated — old links/saves no longer decode.) Typical fresh-challenge URL payload is ~217 chars; denser → sparser QR codes that scan better in poor lighting.
 
 ## Remote 2-player mode (mode `'r'`)
 
@@ -263,8 +263,6 @@ Two `localStorage` keys:
 State is saved on every reducer change via one `useEffect([state])` that calls `saveState(state)` → `writeGames` + `writeMeta`. Transient screens (`setup`, `word-entry`, `handoff`) fall back to `home` on rehydrate. `revealing` and `ui.errorTick` reset. Saved state is cleared on logout.
 
 A finished game (`solo-summary` / `game-over`) is dropped from the dict when the user leaves it via Menu / Play Again / Change Mode — no UI path leads back into a finished game anyway. Blank solo games (started but never guessed) are also dropped on `GO_HOME`. Other in-progress games stay in the dict and surface in the active-games list on Home.
-
-Legacy `_tw_save_v2` is migrated once on first boot of this version: its single state is decoded, converted into a new game entry, and the old key is removed.
 
 Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a function) so the whole reducer state remains JSON-serializable.
 

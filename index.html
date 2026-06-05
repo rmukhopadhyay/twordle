@@ -398,24 +398,19 @@
     const AUTH_KEY  = '_wpa';
     const GAMES_KEY = '_tw_games_v1';   // dict of { gameId: { value: <encoded>, savedAt } }
     const META_KEY  = '_tw_meta_v1';    // { currentGameId, screen } — the "where am I" pointer
-    const LEGACY_SAVE_KEY = '_tw_save_v2';  // migrated once into GAMES_KEY on first boot of this version
     const DAY_MS    = 24 * 60 * 60 * 1000;
     const SAVE_TTL_MS = 7 * DAY_MS;     // game state ages out after a week of inactivity
     const AUTH_TTL_MS = 365 * DAY_MS;   // auth ages out after a year (refreshed on each session)
 
     // Wrap stored values with their save timestamp; on read, discard if older
     // than ttlMs. Returns { value } on hit, null on miss/expired/malformed.
-    // Legacy unwrapped values are accepted once and get re-saved with a
-    // wrapper on the next write.
     function readWithTTL(key, ttlMs) {
       try {
         const raw = localStorage.getItem(key);
         if (raw == null) return null;
-        let parsed = null;
-        try { parsed = JSON.parse(raw); } catch (e) { /* not JSON: legacy bare value */ }
+        const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object' || typeof parsed.savedAt !== 'number') {
-          // Legacy format. Accept this once; next write will adopt the wrapper.
-          return { value: parsed ?? raw };
+          return null;  // not a valid TTL wrapper — treat as absent
         }
         if (Date.now() - parsed.savedAt > ttlMs) {
           localStorage.removeItem(key);
@@ -621,10 +616,6 @@
     // Compact JSON with short keys + single-char score codes, then run
     // through LZ-string compressToEncodedURIComponent — the output is both
     // compressed AND URL-component-safe (no further base64 step needed).
-    //
-    // Backward compatibility: decodeGame tries LZ-string first, falls back
-    // to the legacy plain base64url format so URLs/saves from earlier
-    // versions still decode. Phases 1–5 used `b64UrlEncode(JSON.stringify(p))`.
     function encodeGame(g) {
       const packed = {
         v: GAME_VERSION,
@@ -682,36 +673,12 @@
           } : undefined,
         });
       };
-      // Try LZ-string (current format)
       let parsed = null;
       try {
         const text = LZString.decompressFromEncodedURIComponent(str);
         parsed = tryParse(text);
-      } catch (e) { /* fall through */ }
-      // Fall back to legacy base64url (Phase 1–5 format)
-      if (!parsed) {
-        try {
-          parsed = tryParse(b64UrlDecode(str));
-        } catch (e) { /* fall through */ }
-      }
+      } catch (e) { /* malformed — return null below */ }
       return parsed ? materialize(parsed) : null;
-    }
-
-    function b64UrlEncode(str) {
-      const bytes = new TextEncoder().encode(str);
-      let bin = '';
-      for (const b of bytes) bin += String.fromCharCode(b);
-      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    function b64UrlDecode(str) {
-      let s = str.replace(/-/g, '+').replace(/_/g, '/');
-      const pad = s.length % 4;
-      if (pad) s += '='.repeat(4 - pad);
-      const bin = atob(s);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return new TextDecoder().decode(bytes);
     }
 
     // ── URL share helpers ─────────────────────────────────────────────────
@@ -1361,50 +1328,10 @@
       try {
         localStorage.removeItem(GAMES_KEY);
         localStorage.removeItem(META_KEY);
-        localStorage.removeItem(LEGACY_SAVE_KEY);
       } catch (e) {}
     }
 
-    // One-time migration: collapse the old single-state _tw_save_v2 into a
-    // single entry in the new games dict.
-    function migrateLegacy() {
-      try {
-        const raw = localStorage.getItem(LEGACY_SAVE_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        const old = (parsed && typeof parsed === 'object' && 'value' in parsed && 'savedAt' in parsed)
-          ? parsed.value : parsed;
-        localStorage.removeItem(LEGACY_SAVE_KEY);
-        if (!old || !old.mode) return;
-        const game = emptyGame({
-          id: randomGameId(),
-          mode: old.mode === 'solo' ? 's' : 'l',
-          players: old.tp?.players || ['', ''],
-          challengeFor: old.tp?.challengeFor || [[], []],
-          results: old.tp?.results || Array.from({length: TOTAL_ROUNDS}, () => [null, null]),
-          round: old.tp?.round ?? 0,
-          turn: old.tp?.turn ?? 0,
-          wordEntryPhase: old.tp?.wordEntryPhase ?? 0,
-          target: old.game?.target || '',
-          guesses: old.game?.guesses || [],
-          scores: old.game?.scores || [],
-          current: old.game?.current || '',
-          over: !!old.game?.over, won: !!old.game?.won,
-        });
-        const games = loadGames();
-        games[game.id] = game;
-        writeGames(games);
-        const screen = TRANSIENT_SCREENS.has(old.screen) ? 'home' : (old.screen || 'home');
-        if (screen !== 'home') {
-          writeMeta({ currentGameId: game.id, screen });
-        }
-      } catch (e) {
-        try { localStorage.removeItem(LEGACY_SAVE_KEY); } catch (e2) {}
-      }
-    }
-
     function loadInitialState() {
-      migrateLegacy();
       const games = loadGames();
       const meta = loadMeta();
       let currentGameId = null;
