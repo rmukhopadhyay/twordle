@@ -91,7 +91,7 @@ In-person on one shared device. Each "handoff" is a physical pass.
 4. **Handoff**: Pass device to Player 2
 5. **Word entry — Player 2**: Enters 3 words for Player 1
 6. **Handoff**: Pass device back to Player 1 to start Round 1
-7. **Each round**: Player 1 guesses → handoff → Player 2 guesses → round evaluated → handoff to Player 1 for next round → …
+7. **Each round**: Player 1 guesses → handoff → (Player 2 reviews P1's board + standings) → Player 2 guesses → round evaluated → handoff → … (the pre-turn `review` is shared with remote — see "Review screen")
 
 #### Remote (mode `'r'`)
 
@@ -169,7 +169,7 @@ When `REVEAL_DONE` produces `over: true` in remote mode, the **sender** goes to 
 
 ### Review screen
 
-After the sender finishes a round turn and shares the URL, the recipient lands on a `ReviewBoard` component first — it shows the sender's actual guesses and tile colors against the receiver's secret word, plus "Bob solved it in 3!" / "Bob was stumped.", **a "Score so far" `Scoreboard`** (running standings through the round the opponent just played, so the player can calibrate risk before their turn), and a Continue button. Tapping Continue dispatches `REVIEW_DONE`, which clears `reviewBoard` and routes to whatever would have applied otherwise (`game`, `round-summary`, or `game-over`). The snapshot lives in the encoded URL as a compact `rb` field (player index, round, guesses, single-char score codes, target). The sender never sees `'review'` — `REVEAL_DONE` explicitly sets their screen to share/round-summary/game-over; `RESUME_GAME` only routes to review when `turnFor === myRole`.
+Before a 2-player guesser takes their turn they land on a `ReviewBoard` first — it shows the previous player's actual guesses and tile colors against the secret word, plus "Bob solved it in 3!" / "Bob was stumped.", **a "Score so far" `Scoreboard`** (running standings through the round the opponent just played, so the player can calibrate risk before their turn), and a Continue button. **This is shared by both 2P modes** for parity: in remote it's reached on URL receipt (`reviewBoard && turnFor === myRole`); in local pass-and-play, `REVEAL_DONE` captures the just-played board into `reviewBoard` and `START_TURN` routes the incoming player to `review` before `game`. The first turn of a match has no `reviewBoard`, so it goes straight to `game`. Tapping Continue dispatches `REVIEW_DONE`, which clears `reviewBoard` and routes to whatever would have applied otherwise (`game`, `round-summary`, or `game-over`). The snapshot lives in the encoded URL as a compact `rb` field (player index, round, guesses, single-char score codes, target). The sender never sees `'review'` — `REVEAL_DONE` explicitly sets their screen to share/round-summary/game-over; `RESUME_GAME` only routes to review when `turnFor === myRole`.
 
 ### Open work / known gaps (deferred)
 
@@ -282,7 +282,7 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `Handoff` | `handoff` | Reads `state.handoff.next` and dispatches it on click (pass-and-play only) |
 | `ShareScreen` | `share` | Two variants via `RelayShareBlock`: **invite** (first contact / relay off — prominent Share/Copy/QR) vs **waiting** (relay on — sync chip + demoted nudge). Detector: first invite ⟺ `challengeFor[0].length === 0`. Replaces `Handoff` for remote mode |
 | `RelayShareBlock` | (shared) | The share/sync affordance. `variant='invite'` = prominent **full-state** link/QR (first contact); `variant='waiting'` = sync chip + a **Nudge** button that sends the stateless `#g:` id link (or full state if unsynced), with the **offline pass** (full-state link + QR) behind a "No internet? Pass it manually" toggle. Used by ShareScreen, RoundSummary (sender), GameOver (sender) |
-| `ReviewBoard` | `review` | Opponent's just-played board snapshot for the receiver + a "Score so far" `Scoreboard` (running standings); Continue → REVIEW_DONE |
+| `ReviewBoard` | `review` | Previous player's just-played board snapshot + a "Score so far" `Scoreboard` (running standings), shown before each 2P turn in **both** local & remote; Continue → REVIEW_DONE |
 | `Game` | `game` | Board + keyboard. Owns reveal animation timing, dispatches `REVEAL_DONE` |
 | `SoloSummary` | `solo-summary` | Result + word + Play Again / Change Mode + 2-Player CTA |
 | `RoundSummary` | `round-summary` | Scoreboard. Local-2P → handoff; remote-receiver → next round. Remote-sender: relay on → waiting (`RelayShareBlock`); relay off → "Send to X for Round N" button |

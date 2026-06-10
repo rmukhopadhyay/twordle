@@ -1143,8 +1143,13 @@
           const g = getCurrentGame(state);
           if (!g) return state;
           const target = g.challengeFor[action.player][action.round];
+          // If a previous turn left a reviewBoard snapshot, the incoming player
+          // sees the opponent's board + standings first (local parity with
+          // remote's review); REVIEW_DONE then routes on to the game. The board
+          // is already set up below, so the review reads only `reviewBoard`.
+          const screen = g.reviewBoard ? 'review' : 'game';
           return withCurrentGame({
-            ...state, screen: 'game',
+            ...state, screen,
             handoff: null, pendingContinue: false, revealing: false,
           }, {
             round: action.round, turn: action.player,
@@ -1203,9 +1208,17 @@
           const results = g.results.map(r => r.slice());
           results[g.round][g.turn] = { solved: won, guesses: g.guesses.length };
           if (g.mode === 'l') {
-            // Local 2P: show continue overlay so the device gets passed.
+            // Local 2P: capture the just-played board so the next player can
+            // review it + the standings before their turn (parity with remote),
+            // then show the continue overlay so the device gets passed.
+            const reviewBoard = {
+              p: g.turn, r: g.round,
+              gs: g.guesses.slice(),
+              sc: g.scores.map(row => row.slice()),
+              tg: g.target,
+            };
             return withCurrentGame({ ...state, revealing: false, pendingContinue: true },
-                                   { over: true, won, results });
+                                   { over: true, won, results, reviewBoard });
           }
           // Remote 2P: compute the next state then pick a screen.
           //   - Game over → land on game-over (the share affordance lives there
