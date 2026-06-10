@@ -291,6 +291,7 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `TopBar` | (shared) | Unified header on every screen except `login` & `home`. Owns the left **Home/Cancel** button (`topbarLeftAction`). |
 | `ActiveGames` | (shared, on Home) | List of in-progress games sorted by most recent activity; tap to resume, × to dismiss |
 | `Disclaimer` | (shared, on Login + Home) | Small attribution + IP-respect notice ("Inspired by Wordle® by The New York Times Company...") |
+| `RulesBlurb` | (shared) | Collapsible "How it works" explaining the non-obvious 2P scoring (3 rounds, pick words for each other, lowest total wins, asymmetric stump = instant win). On `ModeChooser` **and** `AcceptChallenge` (the invited friend never sees ModeChooser) |
 
 ### TopBar and the left button (Home / Cancel)
 

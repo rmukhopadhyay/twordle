@@ -191,6 +191,15 @@
     #s-accept-challenge,#s-mode-chooser{min-height:100dvh;}
     .mc-hint{font-size:.78rem;color:var(--muted);line-height:1.5;
              max-width:300px;margin-top:-6px;text-align:center;}
+    .rules-blurb{width:100%;max-width:320px;display:flex;flex-direction:column;
+                 align-items:center;gap:8px;margin-top:6px;}
+    .rules-toggle{background:none;border:none;color:var(--muted);font-size:.78rem;
+                  letter-spacing:.04em;cursor:pointer;text-decoration:underline;
+                  text-underline-offset:3px;padding:6px;touch-action:manipulation;}
+    .rules-toggle:hover{color:var(--text);}
+    .rules-body{font-size:.8rem;color:var(--muted);line-height:1.6;text-align:left;}
+    .rules-body p{margin:0 0 8px;}
+    .rules-body strong{color:var(--text);}
 
     /* Screens whose content can grow taller than the viewport. The body has
        overflow:hidden (to lock the game screen in place), so each of these
@@ -1785,6 +1794,27 @@
       `;
     }
 
+    // Collapsible "How it works" — the 2P scoring isn't obvious, and the invited
+    // friend (who never sees ModeChooser) most needs it, so it lives on both
+    // entry points (ModeChooser + AcceptChallenge).
+    function RulesBlurb() {
+      const [open, setOpen] = useState(false);
+      return html`
+        <div class="rules-blurb">
+          <button class="rules-toggle" onClick=${() => setOpen(o => !o)}>
+            ${open ? '▾' : '▸'} How it works
+          </button>
+          ${open && html`
+            <div class="rules-body">
+              <p>You each secretly pick <strong>3 words</strong> for the other to guess — one per round, 3 rounds.</p>
+              <p>Solve each in as few guesses as you can. After 3 rounds, <strong>lowest total guess count wins</strong>.</p>
+              <p>If one of you cracks a word the other can't, that's an <strong>instant win</strong>. A stumped word counts as 6.</p>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
     function Login({ onSuccess }) {
       const [pw, setPw] = useState('');
       const [show, setShow] = useState(false);
@@ -1872,6 +1902,7 @@
               ⚔ Pass & Play
             </button>
             <div class="mc-hint">Same device. You'll hand the phone back and forth.</div>
+            <${RulesBlurb} />
           </div>
         </div>
       `;
@@ -2051,6 +2082,7 @@
             <p class="we-prompt" dangerouslySetInnerHTML=${{
               __html: `<strong>${initiator}</strong> challenged <strong>${opponent}</strong> to a Twordle match.<br>Enter 3 secret words for them to guess — one per round.`,
             }}></p>
+            <${RulesBlurb} />
             <div class="we-fields">
               ${[0,1,2].map(i => html`
                 <div class="we-row" key=${i}>
