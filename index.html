@@ -1059,6 +1059,28 @@
           // game-over) also drops the finished sender — nothing left to re-share.
           return { ...initialState, games: dropLeavingCurrent(state, { delivered: action.delivered }) };
 
+        case 'REMATCH': {
+          // Start a fresh 2P match with the same players + mode, skipping Setup
+          // and ModeChooser. Drops the finished match and goes to word entry.
+          // Remote: the tapper becomes the new initiator (players reordered so
+          // they're P1) and re-invites the opponent; it's a brand-new game id.
+          const g = getCurrentGame(state);
+          if (!g || (g.mode !== 'l' && g.mode !== 'r')) return state;
+          let players = g.players, extra = {};
+          if (g.mode === 'r') {
+            const me = g.myRole ?? 0;
+            players = [g.players[me], g.players[1 - me]];
+            extra = { myRole: 0, turnFor: 1, turnCounter: 1 };
+          }
+          const fresh = emptyGame({ id: randomGameId(), mode: g.mode, players, ...extra });
+          const games = dropLeavingCurrent(state, { delivered: true });
+          return {
+            ...state, screen: 'word-entry', currentGameId: fresh.id,
+            games: { ...games, [fresh.id]: stampGame(fresh) },
+            handoff: null, pendingContinue: false, revealing: false,
+          };
+        }
+
         case 'SETUP_DONE': {
           // Names submitted. Create the game with mode='l' as a placeholder;
           // the mode-chooser screen commits the actual mode next. wordEntryPhase
@@ -2773,9 +2795,12 @@
                                     variant=${relayOn ? 'waiting' : 'invite'} />
               </div>
             `}
+            <button class="btn btn-g" onClick=${() => dispatch({ type: 'REMATCH' })}>
+              Rematch ${g.mode === 'r' ? (g.players[1 - (g.myRole ?? 0)] || '') : ''} →
+            </button>
             <button class="btn btn-o" onClick=${() => dispatch({ type: 'GO_HOME',
                       delivered: isRemoteSender && relayOn && syncStatus?.[g.id] === 'synced' })}>
-              ${isRemoteSender ? 'Done' : 'Play Again'}
+              ${isRemoteSender ? 'Done' : 'Home'}
             </button>
           </div>
         </div>

@@ -286,7 +286,7 @@ Handoff `next` is stored as `{type: 'START_TURN', round, player}` (data, not a f
 | `Game` | `game` | Board + keyboard. Owns reveal animation timing, dispatches `REVEAL_DONE` |
 | `SoloSummary` | `solo-summary` | Result + word + Play Again / Change Mode + 2-Player CTA |
 | `RoundSummary` | `round-summary` | Scoreboard. Local-2P → handoff; remote-receiver → next round. Remote-sender: relay on → waiting (`RelayShareBlock`); relay off → "Send to X for Round N" button |
-| `GameOver` | `game-over` | Stump / guess-total / tie outcome + final scoreboard. **Remote sender** (turnFor !== myRole): relay on → "result on its way" + waiting affordance; relay off → prominent embedded share |
+| `GameOver` | `game-over` | Stump / guess-total / tie outcome + final scoreboard. Primary **Rematch** button (`REMATCH` — fresh match, same players + mode, skips Setup/ModeChooser) + secondary **Home**/**Done**. **Remote sender** (turnFor !== myRole): relay on → "result on its way" + waiting affordance; relay off → prominent embedded share |
 | `Scoreboard` | (shared) | Used by RoundSummary and GameOver. A stumped cell shows the **target word** (gold, from `challengeFor[pi][r]`) instead of a bare ✗; solved cells show the guess count |
 | `TopBar` | (shared) | Unified header on every screen except `login` & `home`. Owns the left **Home/Cancel** button (`topbarLeftAction`). |
 | `ActiveGames` | (shared, on Home) | List of in-progress games sorted by most recent activity; tap to resume, × to dismiss |
