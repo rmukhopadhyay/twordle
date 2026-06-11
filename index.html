@@ -2006,7 +2006,7 @@
       const submit = () => {
         const a = p1.trim(), b = p2.trim();
         if (!a || !b) return setErr('Enter both names.');
-        if (a.toLowerCase() === b.toLowerCase()) return setErr('Players need different names!');
+        if (a.toLowerCase() === b.toLowerCase()) return setErr('Use two different names!');
         setErr('');
         dispatch({ type: 'SETUP_DONE', p1: a, p2: b });
       };
@@ -2015,11 +2015,11 @@
         <div id="s-setup" class="screen">
           <${TopBar} state=${state} dispatch=${dispatch} title="2 Player" />
           <div class="setup-body">
-            <h2>Enter player names</h2>
-            <div class="field"><label>Player 1</label>
+            <h2>Who's playing?</h2>
+            <div class="field"><label>Your name</label>
               <input class="tinput" type="text" placeholder="e.g. Alice" maxlength="16"
                      ref=${p1Ref} value=${p1} onInput=${e => setP1(e.target.value)} /></div>
-            <div class="field"><label>Player 2</label>
+            <div class="field"><label>Opponent's name</label>
               <input class="tinput" type="text" placeholder="e.g. Bob" maxlength="16"
                      value=${p2} onInput=${e => setP2(e.target.value)}
                      onKeyDown=${e => { if (e.key === 'Enter') submit(); }} /></div>
