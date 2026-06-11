@@ -1,0 +1,7 @@
+# Regenerable intermediates / local env — keep the script, manual lists, and the
+# committed agent classification record (results/) for reproducibility.
+.venv/
+pool.json
+chunks/
+answers.txt
+guesses.txt

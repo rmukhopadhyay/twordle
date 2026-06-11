@@ -1,0 +1,2 @@
+# One 5-letter word per line to force OUT of the answers/guesses (overrides the
+# LLM classification). Empty for now — add survivors that "don't feel real".

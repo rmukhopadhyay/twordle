@@ -31,16 +31,25 @@ The state machine lives in a single `useReducer` at the top of the `App` compone
 
 Two lists are embedded as JS constants:
 
-- **`ANSWERS`** (~3,082 words): The pool of possible solutions. Filtered to Zipf frequency ≥ 2.5 with bare plurals of 4-letter words removed (e.g. "crabs", "plans", "taxes" are excluded as answers but legal to guess).
-- **`VALID_GUESSES_EXTRA`** (~12,653 words): All five-letter English words. Obscure words like "aahed" are legal guesses but will never be answers.
-- **`ALL_VALID`**: A `Set` of both combined, used for guess validation.
+- **`ANSWERS`** (~2,620 words): The pool of possible solutions, and the only words allowed as secret words (validated via `ANSWERS_SET`). Curated to "fair, commonly-known real words" — proper nouns, bare plural nouns, and Scrabble-junk removed; known-but-rare words (paean, pluot, umami) kept.
+- **`VALID_GUESSES_EXTRA`** (~5,485 words): Extra legal guesses **disjoint from** `ANSWERS` — real but too obscure/inflected to be a fair solution (incl. plurals like "crabs"). Words like "amman"/"crwth" are in **neither** list.
+- **`ALL_VALID`** (~8,105): `new Set([...ANSWERS, ...VALID_GUESSES_EXTRA])`, used for guess validation.
 
-To regenerate the word lists (not normally needed):
+### Regenerating the lists (`tools/gen_wordlists.py`)
+A committed, reproducible pipeline (replaces the lost original script). Stages:
+1. `pool` — extract the current pool from `index.html`, attach **wordfreq** Zipf + a bare-plural-noun flag (**NLTK** WordNet lemmatizer), apply the guess floor (Zipf ≥ 1.0 drops the zero-frequency Scrabble-junk tier), and chunk the answer-candidates (Zipf ≥ 2.0, non-plural) into `tools/chunks/`.
+2. **LLM curation** — Haiku subagents classify each chunk → `answer` / `guess` / `reject` (proper-nouns & junk → reject, removed from both lists), writing `tools/results/*.csv` (committed — the curation record).
+3. `emit` — aggregate results + `tools/manual_allow.txt` / `manual_deny.txt` overrides → `answers.txt` / `guesses.txt`.
+4. `splice` — rewrite the two `const` arrays in `index.html`.
+
 ```bash
-cd /tmp && npm install an-array-of-english-words
-pip install wordfreq --break-system-packages
-# then run the generation script from the original session
+python3 -m venv tools/.venv && tools/.venv/bin/pip install wordfreq nltk
+tools/.venv/bin/python tools/gen_wordlists.py pool      # → chunks for the agents
+# (run Haiku agents over tools/chunks/*.txt → tools/results/*.csv)
+tools/.venv/bin/python tools/gen_wordlists.py emit      # aggregate + overrides
+tools/.venv/bin/python tools/gen_wordlists.py splice    # write into index.html
 ```
+`tools/.venv/`, `pool.json`, `chunks/`, `answers.txt`, `guesses.txt` are gitignored (regenerable); the script, manual lists, and `results/` are committed.
 
 ---
 
