@@ -3,5 +3,7 @@
 .venv/
 pool.json
 chunks/
+bandchunks/
+band.txt
 answers.txt
 guesses.txt

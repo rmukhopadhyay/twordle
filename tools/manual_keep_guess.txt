@@ -1,0 +1,13 @@
+# One 5-letter word per line to force back IN as a legal GUESS (not an answer),
+# overriding a band-vetting `reject`. Use for real-but-obscure words a reasonable
+# player might still type. (To force a word in as an ANSWER, use manual_allow.txt.)
+coopt
+bombe
+pekoe
+kulak
+kukri
+orlop
+cooky
+chela
+arcus
+kalpa
