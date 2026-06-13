@@ -1577,10 +1577,16 @@
     //          except during initiator setup where it's "✕ Cancel"
     //  - center: title + optional badge (chip) or meta (plain text)
     //  - right: optional action node (e.g. New Game button on solo game)
-    function TopBar({ state, dispatch, title = 'Twordle', badge, meta, right }) {
+    function TopBar({ state, dispatch, title = 'Twordle', badge, meta, right, cancelDirty = true }) {
       const leftAction = topbarLeftAction(state);
       const onLeft = () => {
-        if (leftAction === 'cancel-confirm' && !confirm('Discard this challenge setup?')) return;
+        // The initiator's word-entry is the one place leaving discards something,
+        // so it confirms — but only when there's actually something to lose.
+        // `cancelDirty` (passed by WordEntry) is false on an empty form, so a
+        // fresh setup — including right after a Rematch — leaves instantly,
+        // matching the non-destructive Home behavior everywhere else.
+        if (leftAction === 'cancel-confirm' && cancelDirty
+            && !confirm('Discard the words you’ve entered?')) return;
         dispatch({ type: 'GO_HOME' });
       };
       const leftLabel = leftAction === 'home' ? '⌂ Home' : '✕ Cancel';
@@ -2326,7 +2332,8 @@
 
       return html`
         <div id="s-word-entry" class="screen">
-          <${TopBar} state=${state} dispatch=${dispatch} badge=${`${setter}'s words`} />
+          <${TopBar} state=${state} dispatch=${dispatch} badge=${`${setter}'s words`}
+                     cancelDirty=${words.some(w => w.trim().length > 0)} />
           <div class="we-body">
             <p class="we-prompt" dangerouslySetInnerHTML=${{
               __html: `<strong>${setter}</strong>, enter 3 secret words for <strong>${guesser}</strong> to solve — one per round:`
