@@ -360,14 +360,15 @@ The reducer marks `state.revealing = true` when a guess is submitted. The `Game`
 The 3-word inputs on `WordEntry` and `AcceptChallenge` need to be hidden from a peeking opponent without triggering password-manager prompts. **We don't use `type="password"`** (browser saves a credential prompt) and **we don't use `-webkit-text-security: disc`** (iOS Safari briefly reveals the last typed character — Apple's "show last char" carry-over from real password fields).
 
 Instead:
-1. Input is `type="text"` with `autocomplete="off"`, `autocapitalize="none"`, `autocorrect="off"`, `spellcheck=${false}`, `inputmode="email"`, and no `name` attribute. **`spellcheck` must be the boolean `${false}`, not the string `"false"`** — Preact sets it as the DOM *property*, and the string `"false"` is truthy, so `spellcheck="false"` silently leaves spellcheck **on** (a latent bug we hit; it was re-enabling iOS suggestions).
+Instead:
+1. Input is `type="text"` with `autocomplete="off"`, `autocapitalize="characters"`, `autocorrect="off"`, `spellcheck=${false}`, and no `name` attribute. **`spellcheck` must be the boolean `${false}`, not the string `"false"`** — Preact sets it as the DOM *property*, and the string `"false"` is truthy, so `spellcheck="false"` silently leaves spellcheck **on**. This was a latent bug: spellcheck had been ON the whole time, which is the suspected cause of iOS Safari surfacing the QuickType predictive-suggestion bar above the keyboard — which echoes the secret word in plaintext as it's typed, defeating the masking.
 2. CSS class `.masked` sets `color: transparent; caret-color: var(--text)` so the input is invisible-but-typable with a visible cursor
 3. A `pointer-events: none` `.word-input-mask` div is absolutely positioned over the input and renders one `●` per character in the current value
 4. The eye toggle just adds/removes the `masked` class
 
-**`inputmode="email"` is the anti-shoulder-surf fix, not a semantic claim** (the field isn't an email — non-letters are still stripped in `setWord`, and `submit()` upper-cases on its own). On iOS Safari, `autocorrect="off"`/`spellcheck="false"` suppress *autocorrection* but **not** the QuickType *predictive-suggestion bar* above the keyboard — which would echo the secret word the player is typing in plaintext, defeating the whole point of masking. The email keyboard has no predictive bar, so the word never appears anywhere. We can't use `type="password"` (the cleanest no-predict + native mask) because of the Keychain/save-password prompt noted above. Because the dots are CSS-rendered, the email keyboard's only visible difference (an `@`/`.` key, lowercase) is invisible to the user — the masked dots look identical regardless of keyboard.
-
 No browser quirks possible because we render the dots ourselves.
+
+**iOS predictive-bar fallback:** if genuinely turning spellcheck off (the boolean fix above) does *not* stop iOS from showing the QuickType suggestion bar, the next lever is `inputmode="email"` on these inputs — the email keyboard has no predictive bar. It's purely an anti-shoulder-surf trick, not a semantic claim (non-letters are still stripped in `setWord`; `submit()` upper-cases). Because the dots are CSS-rendered, the email keyboard's only visible difference (an `@`/`.` key, lowercase) is invisible behind the mask. We avoid `type="password"` (the cleanest no-predict + native mask) because of the Keychain/save-password prompt noted above.
 
 ---
 
