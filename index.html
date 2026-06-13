@@ -2095,8 +2095,8 @@
                   <label>Round ${i + 1}</label>
                   <div class="wrap-eye">
                     <input class=${`tinput word-w-input ${reveal[i] ? '' : 'masked'}`} type="text" maxlength="5"
-                           placeholder="· · · · ·" autocomplete="off" autocapitalize="characters"
-                           autocorrect="off" spellcheck="false"
+                           placeholder="· · · · ·" autocomplete="off" autocapitalize="none"
+                           autocorrect="off" spellcheck=${false} inputmode="email"
                            ref=${refs[i]} value=${words[i]}
                            onInput=${e => setWord(i, e.target.value)}
                            onKeyDown=${e => onKey(e, i)} />
@@ -2344,8 +2344,8 @@
                   <label>Round ${i + 1}</label>
                   <div class="wrap-eye">
                     <input class=${`tinput word-w-input ${reveal[i] ? '' : 'masked'}`} type="text" maxlength="5"
-                           placeholder="· · · · ·" autocomplete="off" autocapitalize="characters"
-                           autocorrect="off" spellcheck="false"
+                           placeholder="· · · · ·" autocomplete="off" autocapitalize="none"
+                           autocorrect="off" spellcheck=${false} inputmode="email"
                            ref=${refs[i]} value=${words[i]}
                            onInput=${e => setWord(i, e.target.value)}
                            onKeyDown=${e => onKey(e, i)} />
