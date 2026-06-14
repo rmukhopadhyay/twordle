@@ -25,6 +25,12 @@ HTML = ROOT / "index.html"
 # 2.0 keeps the known-but-rare tier for the LLM to judge. Sub-floor known words
 # come in via the manual allowlist.
 ANSWER_FLOOR = 2.0
+# Second answer-curation tier. The original answer pass only judged Zipf>=2.0;
+# known-but-just-sub-floor words (uvula=1.98) got stranded as guess-only. The
+# `ansband` stage runs the same 3-way answer pass over the [ANSWER_BAND_FLOOR,
+# ANSWER_FLOOR) band's band-KEPT words so the genuinely-known ones can be
+# promoted to answers while the obscure-but-real majority stay guesses.
+ANSWER_BAND_FLOOR = 1.25
 # Guess floor: cut the zero-frequency Scrabble junk (crwth/aahed/glout = 0.0)
 # while keeping real-but-uncommon words someone might actually try. The freq data
 # has a gap — nothing sits in (0, 1.0) — so 1.0 == "drop the no-usage-data tier".
@@ -45,6 +51,15 @@ def is_plural_noun(w):
     if lem == w:
         return False
     return bool(wn.synsets(lem, pos="n"))
+
+def is_verb_inflection(w):
+    """Bare -s/-ed inflection of a verb (gnaws, flays, hexed). Same 'grammatical
+    transformation' category as a bare plural noun — fine as a guess, but kept OUT
+    of answers (esp. the obscure ansband tier). Leaves base verbs/adjectives alone."""
+    if not (w.endswith("s") or w.endswith("ed")):
+        return False
+    lem = L.lemmatize(w, "v")
+    return lem != w and bool(wn.synsets(lem, pos="v"))
 
 def main():
     text = HTML.read_text()
@@ -96,6 +111,30 @@ def band():
     print(f"band[{GUESS_FLOOR},{ANSWER_FLOOR})={len(words)} "
           f"chunks={(len(words)+CHUNK-1)//CHUNK}")
 
+def ansband():
+    """Stage 4b: chunk the [ANSWER_BAND_FLOOR, ANSWER_FLOOR) band for a SECOND
+    answer-curation pass (3-way answer/guess/reject), so well-known words that
+    just missed the 2.0 answer floor (uvula=1.98) can be promoted to answers.
+
+    Candidates = currently-VALID, non-plural words in that band (i.e. the band
+    pass already kept them as real guesses; we now ask whether they're also fair
+    *answers*). Junk the band rejected is already gone, so we don't re-judge it.
+    Writes chunks -> tools/ansbandchunks/; agents -> tools/ansbandresults/.
+    """
+    text = HTML.read_text()
+    valid = set(extract_list("ANSWERS", text)) | set(extract_list("VALID_GUESSES_EXTRA", text))
+    words = sorted(w for w in valid
+                   if ANSWER_BAND_FLOOR <= wordfreq.zipf_frequency(w, "en") < ANSWER_FLOOR
+                   and not is_plural_noun(w) and not is_verb_inflection(w))
+    adir = TOOLS / "ansbandchunks"
+    adir.mkdir(exist_ok=True)
+    for f in adir.glob("*.txt"):
+        f.unlink()
+    for i in range(0, len(words), CHUNK):
+        (adir / f"{i // CHUNK:03d}.txt").write_text("\n".join(words[i:i + CHUNK]))
+    print(f"ansband[{ANSWER_BAND_FLOOR},{ANSWER_FLOOR})={len(words)} "
+          f"chunks={(len(words)+CHUNK-1)//CHUNK}")
+
 def read_manual(name):
     f = TOOLS / name
     if not f.exists():
@@ -136,12 +175,28 @@ def emit():
                 if len(parts) == 2 and len(parts[0].strip()) == 5 and parts[1].strip() == "reject":
                     band_rejects.add(parts[0].strip().lower())
 
+    # Second answer-curation pass (tools/ansbandresults/*.csv): promote the
+    # well-known [ANSWER_BAND_FLOOR, ANSWER_FLOOR) words to answers. Only "answer"
+    # matters here -- non-answers stay the valid guesses they already are.
+    ansband_answers = set()
+    abres = TOOLS / "ansbandresults"
+    if abres.exists():
+        for f in sorted(abres.glob("*.csv")):
+            for line in f.read_text().splitlines():
+                parts = line.strip().split(",")
+                if len(parts) == 2 and len(parts[0].strip()) == 5 and parts[1].strip() == "answer":
+                    w = parts[0].strip().lower()
+                    # Honor the no-grammatical-transformation rule for the obscure band:
+                    # an agent may label a verb inflection "answer"; keep it a guess instead.
+                    if not is_verb_inflection(w):
+                        ansband_answers.add(w)
+
     allow, deny = read_manual("manual_allow.txt"), read_manual("manual_deny.txt")
     # keep_guess: force a band word back IN as a legal guess (rescue an over-zealous
     # band reject) WITHOUT promoting it to an answer -- unlike allow, which makes answers.
     keep_guess = read_manual("manual_keep_guess.txt")
     rejects = (({w for w, l in label.items() if l == "reject"} | band_rejects) - allow) - keep_guess
-    answers = ({w for w, l in label.items() if l == "answer"} | allow) - deny
+    answers = ({w for w, l in label.items() if l == "answer"} | ansband_answers | allow) - deny
     valid = {w for w, zz in z.items() if zz >= GUESS_FLOOR}   # guess floor: cut Scrabble junk
     valid = (valid - rejects - deny) | answers | allow         # answers/allow are always valid guesses
     guess_only = sorted(valid - answers)
@@ -151,7 +206,7 @@ def emit():
     (TOOLS / "guesses.txt").write_text("\n".join(guess_only))
     print(f"ANSWERS={len(answers)} GUESS_ONLY={len(guess_only)} ALL_VALID={len(set(answers)|set(guess_only))} "
           f"missing_defaulted={len(missing)} rejects={len(rejects)} band_rejects={len(band_rejects)} "
-          f"allow={len(allow)} keep_guess={len(keep_guess)} deny={len(deny)}")
+          f"ansband_promoted={len(ansband_answers)} allow={len(allow)} keep_guess={len(keep_guess)} deny={len(deny)}")
 
 def splice():
     """Replace the ANSWERS and VALID_GUESSES_EXTRA constants in index.html with
@@ -172,4 +227,4 @@ def splice():
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "pool"
-    {"pool": main, "band": band, "emit": emit, "splice": splice}[mode]()
+    {"pool": main, "band": band, "ansband": ansband, "emit": emit, "splice": splice}[mode]()

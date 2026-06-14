@@ -1,9 +1,11 @@
 # Regenerable intermediates / local env — keep the script, manual lists, and the
 # committed agent classification record (results/) for reproducibility.
 .venv/
+__pycache__/
 pool.json
 chunks/
 bandchunks/
+ansbandchunks/
 band.txt
 answers.txt
 guesses.txt
